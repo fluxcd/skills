@@ -1,4 +1,4 @@
-# schema source: Flux v2.9.3 https://github.com/fluxcd/flux2
+# schema source: Flux v2.9.4 https://github.com/fluxcd/flux2
 apiVersion <string> enum=image.toolkit.fluxcd.io/v1
 kind <string> enum=ImageUpdateAutomation
 metadata.name <string> (required)
@@ -25,7 +25,7 @@ spec.git.commit.signingKey.type <string> enum=gpg|ssh	# Type selects the signing
 spec.git.push <object>	# Push specifies how and where to push commits made by the automation. If missing, commits are pushed (back) to `.spec.checkout.branch` or its default.
 spec.git.push.branch <string>	# Branch specifies that commits should be pushed to the branch named. The branch is created using `.spec.checkout.branch` as the starting point, if it doesn't already exist.
 spec.git.push.options <map[string]string>	# Options specifies the push options that are sent to the Git server when performing a push operation. For details, see: https://git-scm.com/docs/git-push#Documentation/git-push.txt---push-optionltoptiongt
-spec.git.push.refspec <string>	# Refspec specifies the Git Refspec to use for a push operation. If both Branch and Refspec are provided, then the commit is pushed to the branch and also using the specified refspec. For more details about Git Refspecs, see: https://git-scm.com/book/en/v2/Git-Internals-The-Refspec
+spec.git.push.refspec <string> pattern="^$|^[^+:]"	# Refspec specifies the Git Refspec to use for a push operation. If both Branch and Refspec are provided, then the commit is pushed to the branch and also using the specified refspec. Deletion refspecs and refspecs prefixed with '+' are not supported. For more details about Git Refspecs, see: https://git-scm.com/book/en/v2/Git-Internals-The-Refspec
 spec.interval <string> (required) pattern="^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$"	# Interval gives an lower bound for how often the automation run should be attempted.
 spec.policySelector <object>	# PolicySelector allows to filter applied policies based on labels. By default includes all policies in namespace.
 spec.policySelector.matchExpressions <[]object>	# matchExpressions is a list of label selector requirements. The requirements are ANDed.

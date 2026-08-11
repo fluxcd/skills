@@ -1,4 +1,4 @@
-# schema source: Flux Operator v0.57.0 https://github.com/controlplaneio-fluxcd/flux-operator
+# schema source: Flux Operator v0.58.0 https://github.com/controlplaneio-fluxcd/flux-operator
 apiVersion <string> enum=fluxcd.controlplane.io/v1
 kind <string> enum=ResourceSetInputProvider
 metadata.name <string> (required)

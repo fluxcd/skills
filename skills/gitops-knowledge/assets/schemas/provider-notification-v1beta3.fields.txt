@@ -1,4 +1,4 @@
-# schema source: Flux v2.9.3 https://github.com/fluxcd/flux2
+# schema source: Flux v2.9.4 https://github.com/fluxcd/flux2
 apiVersion <string> enum=notification.toolkit.fluxcd.io/v1beta3
 kind <string> enum=Provider
 metadata.name <string> (required)
