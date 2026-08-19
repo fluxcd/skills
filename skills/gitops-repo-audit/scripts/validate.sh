@@ -17,6 +17,10 @@
 # dotfiles, Terraform modules and Helm charts.
 # With --helm-charts, Helm charts are rendered with 'helm template' using
 # their default values and the output is validated as well.
+# With --envsubst, variables from a dotenv file are exported and standalone
+# manifests and rendered kustomize overlays are piped through 'flux envsubst'
+# before validation, mirroring Flux post-build variable substitution. Helm
+# chart output is not substituted.
 # A build or validation failure does not stop the run; the script keeps
 # going and exits non-zero at the end with the total error count.
 # With --output-bundle, all standalone manifests and rendered kustomize
@@ -31,6 +35,7 @@
 # - flux-schema >= 0.6 (standalone binary, or the 'flux schema' plugin)
 # - kustomize, or kubectl (uses its embedded kustomize via 'kubectl kustomize')
 # - helm >= 4.0 (only with --helm-charts)
+# - flux >= 2.9 (only with --envsubst)
 
 # Usage examples:
 #   validate.sh \
@@ -42,6 +47,8 @@
 #     --skip-json-path=Secret:/sops \
 #     --skip-missing-schemas \
 #     --output=json
+#
+#   validate.sh -d ./manifests -E ./.flux.env
 #
 # Name the bundle with a leading dot (e.g. '.bundle.yaml') so that
 # validation and 'flux-schema discover' ignore it on subsequent runs,
@@ -102,6 +109,14 @@ config_file=".fluxschema.yml"
 # path to the merged YAML bundle (empty disables bundling)
 bundle_file=""
 
+# path to a dotenv file with post-build substitution variables
+# (empty disables envsubst)
+envsubst_file=""
+
+# temp dir holding the substituted copies of standalone manifests,
+# created by load_envsubst and removed on exit
+envsubst_tmp_dir=""
+
 # when true, render Helm charts with 'helm template' and validate the output
 build_helm_charts=false
 
@@ -118,7 +133,7 @@ declare -a helm_chart_dirs=()
 declare -a kustomize_dirs=()
 
 usage() {
-  echo "Usage: $0 [-d <dir>] [-c <file>] [-e <dir>]... [-b <file>] [-H] [-h] [-- <flux-schema flags>]"
+  echo "Usage: $0 [-d <dir>] [-c <file>] [-e <dir>]... [-b <file>] [-H] [-E <file>] [-h] [-- <flux-schema flags>]"
   echo ""
   echo "Validate Flux custom resources and kustomize overlays using flux-schema."
   echo ""
@@ -131,6 +146,8 @@ usage() {
   echo "                              overlays to a single YAML file with provenance comments"
   echo "  -H, --helm-charts           Render Helm charts with 'helm template' using their"
   echo "                              default values and validate the output (requires helm)"
+  echo "  -E, --envsubst <file>       Path to a dotenv file with Flux post-build"
+  echo "                              substitution variables (requires flux)"
   echo "  -h, --help                  Show this help message"
   echo "  -- <flux-schema flags>      Pass the remaining arguments verbatim to 'flux-schema validate',"
   echo "                              taking precedence over the config file and default flags"
@@ -175,6 +192,14 @@ parse_args() {
         build_helm_charts=true
         shift
         ;;
+      -E|--envsubst)
+        if [[ -z "${2:-}" ]]; then
+          echo "ERROR - --envsubst requires a file path argument" >&2
+          exit 1
+        fi
+        envsubst_file="$2"
+        shift 2
+        ;;
       -h|--help)
         usage
         exit 0
@@ -201,6 +226,16 @@ check_prerequisites() {
   if [[ "$build_helm_charts" == true ]] && ! command -v helm &> /dev/null; then
     echo "ERROR - helm is not installed (required by --helm-charts)" >&2
     exit 1
+  fi
+  if [[ -n "$envsubst_file" ]]; then
+    if [[ ! -f "$envsubst_file" ]]; then
+      echo "ERROR - envsubst file not found: $envsubst_file" >&2
+      exit 1
+    fi
+    if ! command -v flux &> /dev/null; then
+      echo "ERROR - flux is not installed (required by --envsubst)" >&2
+      exit 1
+    fi
   fi
 }
 
@@ -245,6 +280,21 @@ resolve_config() {
     echo "INFO - Config file '$config_file' not found, using default flags"
     flux_schema_flags=("${default_flux_schema_flags[@]}")
   fi
+}
+
+# Export the variables from the dotenv file so that they are visible to
+# 'flux envsubst', mirroring Flux post-build variable substitution.
+load_envsubst() {
+  if [[ -z "$envsubst_file" ]]; then
+    return 0
+  fi
+  echo "INFO - Using envsubst variables from: $envsubst_file"
+  set -o allexport
+  # shellcheck disable=SC1090
+  source "$envsubst_file"
+  set +o allexport
+  envsubst_tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$envsubst_tmp_dir"' EXIT
 }
 
 # Normalize a path by stripping leading "./" for consistent comparisons
@@ -405,20 +455,51 @@ validate_kubernetes_manifests() {
     files+=("$file")
   done < <(find "$root_dir" -mindepth 1 -name '.*' -prune -o -type f \( -name '*.yaml' -o -name '*.yml' \) -print0)
   if [[ ${#files[@]} -gt 0 ]]; then
-    if [[ -n "$bundle_file" ]]; then
+    if [[ -n "$envsubst_file" ]]; then
+      # Substitute each file into a copy under the temp dir mirroring its
+      # root-relative path, then validate the copies in one invocation so
+      # errors keep per-file attribution and schemas are fetched only once.
+      local tmp_files=() target
       for file in "${files[@]}"; do
-        # SC2094: $file is never the bundle file (filtered above via -ef)
+        target="$envsubst_tmp_dir/$(rel_path "$file")"
+        mkdir -p "$(dirname "$target")"
+        if ! flux envsubst < "$file" > "$target"; then
+          echo "ERROR - flux envsubst failed for $file" >&2
+          bundle_append "file: $(rel_path "$file") (envsubst failed)" < /dev/null
+          errors=$((errors + 1))
+          rm -f "$target"
+          continue
+        fi
+        # SC2094: $target lives under the temp dir, never the bundle file
         # shellcheck disable=SC2094
-        bundle_append "file: $(rel_path "$file")" < "$file"
+        bundle_append "file: $(rel_path "$file")" < "$target"
+        tmp_files+=("$target")
       done
+      if [[ ${#tmp_files[@]} -gt 0 ]]; then
+        if ! output="$("${flux_schema_cmd[@]}" validate "${flux_schema_flags[@]}" "${tmp_files[@]}" 2>&1)"; then
+          errors=$((errors + 1))
+        fi
+        # strip the temp dir prefix so results show root-relative paths
+        output="${output//"$envsubst_tmp_dir/"/}"
+        printf '%s\n' "$output"
+        accumulate_summary "$output"
+      fi
+    else
+      if [[ -n "$bundle_file" ]]; then
+        for file in "${files[@]}"; do
+          # SC2094: $file is never the bundle file (filtered above via -ef)
+          # shellcheck disable=SC2094
+          bundle_append "file: $(rel_path "$file")" < "$file"
+        done
+      fi
+      # Capture stdout+stderr in memory so the run can be both printed and
+      # tallied; the assignment lives in the 'if' so errexit does not fire.
+      if ! output="$("${flux_schema_cmd[@]}" validate "${flux_schema_flags[@]}" "${files[@]}" 2>&1)"; then
+        errors=$((errors + 1))
+      fi
+      printf '%s\n' "$output"
+      accumulate_summary "$output"
     fi
-    # Capture stdout+stderr in memory so the run can be both printed and
-    # tallied; the assignment lives in the 'if' so errexit does not fire.
-    if ! output="$("${flux_schema_cmd[@]}" validate "${flux_schema_flags[@]}" "${files[@]}" 2>&1)"; then
-      errors=$((errors + 1))
-    fi
-    printf '%s\n' "$output"
-    accumulate_summary "$output"
   fi
 }
 
@@ -436,6 +517,14 @@ validate_kustomize_overlays() {
       bundle_append "kustomize-overlay: $(rel_path "$overlay") (build failed)" < /dev/null
       errors=$((errors + 1))
       continue
+    fi
+    if [[ -n "$envsubst_file" ]]; then
+      if ! build_output="$(flux envsubst <<< "$build_output")"; then
+        echo "ERROR - flux envsubst failed for $overlay" >&2
+        bundle_append "kustomize-overlay: $(rel_path "$overlay") (envsubst failed)" < /dev/null
+        errors=$((errors + 1))
+        continue
+      fi
     fi
     [[ -n "$bundle_file" ]] && bundle_append "kustomize-overlay: $(rel_path "$overlay")" <<< "$build_output"
     if ! output="$(printf '%s\n' "$build_output" | \
@@ -504,6 +593,7 @@ check_prerequisites
 resolve_flux_schema
 resolve_kustomize
 resolve_config
+load_envsubst
 init_bundle
 detect_excluded_dirs
 validate_kubernetes_manifests
