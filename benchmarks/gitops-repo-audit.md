@@ -1,5 +1,33 @@
 # gitops-repo-audit
 
+## v0.3.0 (2026-08-25)
+
+Adds ResourceSet pipeline checks (`spec.steps` + `wait`, Job `force`/`recreateOnFailure`/`ttlSecondsAfterFinished`, step vs applier timeouts, `dependsOn` namespaces), post-build substitution rules (YAML-safe values, plain `spec.images[].name`, same-namespace `substituteFrom`), the directory-driven monorepo pattern (ArtifactGenerator `pathPattern` + `ExternalArtifact` input provider), the `source-watcher` prerequisite, and a `multitenant: false` exception for cross-namespace refs. New fixture `tests/gitops-repo-audit/resourceset-pipelines` (eval 7) seeds each defect. Compared against the v0.2.0 skill snapshot (no no-skill baseline); 1 run per eval per configuration. Graded by `claude-opus-5`.
+
+Model: `claude-opus-5`
+
+**Results**
+
+| Eval | v0.3.0 | v0.2.0 | Delta |
+|------|--------|--------|-------|
+| Monorepo structure | 14/14 (100%) | 14/14 (100%) | 0% |
+| Multi-repo fleet | 16/16 (100%) | 16/16 (100%) | 0% |
+| Image automation | 14/14 (100%) | 13/14 (93%) | +7% |
+| Mixed issues | 21/21 (100%) | 21/21 (100%) | 0% |
+| Overlay effects | 5/5 (100%) | 5/5 (100%) | 0% |
+| Overlay stress | 6/6 (100%) | 6/6 (100%) | 0% |
+| ResourceSet pipelines | 16/16 (100%) | 11/16 (69%) | +31% |
+| **Overall** | **92/92 (100%)** | **86/92 (93%)** | **+7%** |
+
+The v0.2.0 skill missed or inverted five ResourceSet-pipeline findings: it never flagged the `dependsOn` entry without `namespace`, praised `app_semver: ">=1.0.0"` as a "bounded, stable-only range" instead of catching the invalid YAML after substitution, recommended *adding* `ttlSecondsAfterFinished` to the second Job rather than removing it, listed `recreateOnFailure` on the DB migration under "done well", and rated the intentional cross-namespace `sourceRef` (`multitenant: false`) as Critical.
+
+**Costs**
+
+| Metric | v0.3.0 | v0.2.0 |
+|--------|--------|--------|
+| Mean duration | 291s | 267s |
+| Mean tokens | 99.2k | 89.0k |
+
 ## v0.2.0 (2026-07-03)
 
 The bundled OpenAPI JSON schemas are replaced with greppable field indexes (`assets/schemas/*.fields.txt`, one line per field), shrinking the schema payload by ~45%. Agents grep a dotted field path instead of reading the full JSON. Three-way comparison against the v0.1.0 snapshot (JSON schemas) and the no-skill baseline; 3 runs per eval per configuration, assertion counts pooled across runs. Graded by `claude-opus-4-8`.

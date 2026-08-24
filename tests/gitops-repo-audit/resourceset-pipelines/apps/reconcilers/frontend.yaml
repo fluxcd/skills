@@ -1,0 +1,106 @@
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSetInputProvider
+metadata:
+  name: frontend
+  namespace: apps-test
+  annotations:
+    fluxcd.controlplane.io/reconcileEvery: "5m"
+spec:
+  type: OCIArtifactTag
+  url: oci://${app_registry}/frontend
+  defaultValues:
+    app: frontend
+  filter:
+    semver: "${app_semver}"
+    limit: 1
+---
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSet
+metadata:
+  name: frontend
+  namespace: apps-test
+  annotations:
+    fluxcd.controlplane.io/reconcileTimeout: "10m"
+spec:
+  dependsOn:
+    - apiVersion: fluxcd.controlplane.io/v1
+      kind: ResourceSet
+      name: apps-test
+      namespace: flux-system
+      ready: true
+  inputsFrom:
+    - kind: ResourceSetInputProvider
+      name: frontend
+  steps:
+    - name: pre-deploy
+      timeout: 5m
+      resources:
+        - apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: frontend-db-migrate
+            namespace: apps-test
+            annotations:
+              fluxcd.controlplane.io/recreateOnFailure: enabled
+          spec:
+            backoffLimit: 2
+            ttlSecondsAfterFinished: 300
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: migrate
+                    image: ${app_registry}/frontend:<< inputs.tag >>
+                    command: ["/app/migrate", "up"]
+                    envFrom:
+                      - secretRef:
+                          name: frontend-db
+    - name: deploy
+      resources:
+        - apiVersion: kustomize.toolkit.fluxcd.io/v1
+          kind: Kustomization
+          metadata:
+            name: << inputs.app >>
+            namespace: apps-test
+          spec:
+            interval: 30m
+            retryInterval: 5m
+            timeout: 15m
+            prune: true
+            wait: true
+            targetNamespace: apps-test
+            sourceRef:
+              kind: ExternalArtifact
+              name: << inputs.app >>-${app_env}
+              namespace: flux-system
+            path: ./envs/${app_env}
+            images:
+              - name: ${app_registry}/frontend
+                newName: ${app_registry}/<< inputs.app >>
+                newTag: << inputs.tag | quote >>
+            postBuild:
+              substitute:
+                app_env: ${app_env}
+              substituteFrom:
+                - kind: ConfigMap
+                  name: flux-vars
+    - name: post-deploy
+      timeout: 5m
+      resources:
+        - apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: frontend-smoke-test
+            namespace: apps-test
+            annotations:
+              fluxcd.controlplane.io/force: enabled
+              fluxcd.controlplane.io/recreateOnFailure: enabled
+          spec:
+            backoffLimit: 1
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: smoke
+                    image: curlimages/curl:8.10.1
+                    command: ["curl", "-fsS", "http://frontend.apps-test.svc/healthz"]
