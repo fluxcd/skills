@@ -30,6 +30,32 @@ On the new fixture the baseline praised the stepped ResourceSet's wait settings,
 
 **Regression check against v0.2.0 skill** (`claude-opus-5` executor and grader, 1 run per eval): v0.3.0 92/92 (100%) vs the v0.2.0 skill snapshot 86/92 (93%); no regressions on evals 1–6, and the v0.2.0 skill scored 11/16 on the ResourceSet pipelines eval — it never flagged the `dependsOn` entry without `namespace`, praised `app_semver: ">=1.0.0"` as a stable-only range, recommended adding `ttlSecondsAfterFinished`, listed `recreateOnFailure` on the DB migration as done well, and rated the intentional cross-namespace `sourceRef` (`multitenant: false`) as Critical. Mean cost 291s / 99.2k tokens vs 267s / 89.0k.
 
+---
+
+Model: `claude-opus-5`
+
+**Results**
+
+| Eval | With Skill | Baseline | Delta |
+|------|-----------|----------|-------|
+| Monorepo structure | 14/14 (100%) | 13/14 (93%) | +7% |
+| Multi-repo fleet | 16/16 (100%) | 16/16 (100%) | 0% |
+| Image automation | 14/14 (100%) | 9/14 (64%) | +36% |
+| Mixed issues | 21/21 (100%) | 18/21 (86%) | +14% |
+| Overlay effects | 5/5 (100%) | 5/5 (100%) | 0% |
+| Overlay stress | 6/6 (100%) | 6/6 (100%) | 0% |
+| ResourceSet pipelines | 16/16 (100%) | 12/16 (75%) | +25% |
+| **Overall** | **92/92 (100%)** | **79/92 (86%)** | **+14%** |
+
+Opus without the skill matches it on the structural evals but misses the Flux-specific semantics: on image automation it reported the podinfo `staging/image-updates` push branch as a defect ("a branch the cluster never reconciles") and declared the v1beta3 alerting broken, and never mentioned `storageNamespace` or the `reconcile.fluxcd.io/watch` label; on mixed issues it kept `flux bootstrap` as the remediation for the `gotk-sync.yaml` layout, did not recommend `OCIRepository` for the `type: oci` HelmRepository, and praised the unlabelled runtime-values ConfigMap; on the ResourceSet fixture it praised the `dependsOn` wiring that lacks a `namespace`, recommended adding `recreateOnFailure` to the migration Job, and never identified the `>=1.0.0` substitution hazard. It also produced unverifiable claims the assertions do not penalise — an `originRevision: "@monorepo"` field on ArtifactGenerator, a "default `reconcileEvery: 1h`" for ResourceSets, the deploy step's `postBuild` dismissed as "dead configuration" — and dismissed schema validation errors as false positives in three of seven runs. The with-skill runs were faster on average despite using more tokens.
+
+**Costs**
+
+| Metric | With Skill | Baseline |
+|--------|-----------|----------|
+| Mean duration | 286s | 304s |
+| Mean tokens | 95.4k | 69.5k |
+
 ## v0.2.0 (2026-07-03)
 
 The bundled OpenAPI JSON schemas are replaced with greppable field indexes (`assets/schemas/*.fields.txt`, one line per field), shrinking the schema payload by ~45%. Agents grep a dotted field path instead of reading the full JSON. Three-way comparison against the v0.1.0 snapshot (JSON schemas) and the no-skill baseline; 3 runs per eval per configuration, assertion counts pooled across runs. Graded by `claude-opus-4-8`.
