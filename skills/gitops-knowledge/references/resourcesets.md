@@ -285,6 +285,9 @@ spec:
       readyExpr: "status.observedGeneration >= 0"
 ```
 
+Always set `namespace` on `dependsOn` entries so cross-namespace dependencies (e.g. an app
+ResourceSet in `apps-test` waiting on `flux-system/infra-controllers`) resolve unambiguously.
+
 **CEL expressions** in `readyExpr` evaluate against the dependency resource's status.
 Common patterns:
 - `status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True')` — standard Ready check
@@ -725,10 +728,15 @@ status:
 | `filter.excludeTag` | string | Regex to exclude tags |
 | `filter.semver` | string | Semver range to filter and sort tags |
 | `skip.labels` | array | Labels to skip input updates (prefix `!` to skip if absent) |
-| `defaultValues` | map | Default key-value pairs merged with exported values |
+| `defaultValues` | map | Default key-value pairs merged with exported values — e.g. `app: frontend` so an otherwise identical ResourceSet body can template on `<< inputs.app >>` |
 | `schedule` | array | Cron schedules with `cron`, `timeZone`, `window` fields |
 | `insecure` | bool | Allow HTTP (ExternalService, OCIArtifactTag only) |
 | `certSecretRef.name` | string | Secret with TLS CA cert (`ca.crt`) |
+
+When `filter.semver` is fed through Flux post-build substitution (`semver: "${app_semver}"`),
+the value must not start with a YAML indicator (`>`, `|`, `*`, `&`, `%`, `@`, `[`, `{`):
+kustomize drops the quotes and the substituted manifest becomes invalid YAML. Use `x`,
+`6.14.x`, `~6.14.0`, `^6.14.0` (same major, not `>=`) or `x || >=0.0.0-0` for prereleases.
 
 Reconciliation is configured via annotations, not spec fields:
 - `fluxcd.controlplane.io/reconcileEvery: "5m"` — poll interval (default: `10m`)
@@ -837,8 +845,10 @@ strategy, `tag@digest` pinning, post-renderers for images not in Helm values) lo
 `ExternalArtifact` per matching directory, a `ResourceSetInputProvider` of `type: ExternalArtifact`
 exports one input per artifact (labels included), and the ResourceSet templates a `Kustomization`
 with `sourceRef.kind: ExternalArtifact` per input. Adding a directory deploys an app, removing it
-prunes the deployment — no per-app Flux config to maintain. Load `references/monorepo-delivery.md`
-for the full pipeline, environment segregation and multi-tenancy notes.
+prunes the deployment — no per-app Flux config to maintain. In the production layout, apps combine
+both input types: the manifests come from the artifact and the image tag from an `OCIArtifactTag`
+provider, pinned via the Kustomization's `spec.images`. Load `references/monorepo-delivery.md`
+for the full pipeline, layered infra reconcilers, app environments and the rules that must hold.
 
 ### Staged Deployments with Jobs
 

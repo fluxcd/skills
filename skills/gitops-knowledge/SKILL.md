@@ -425,6 +425,11 @@ load `references/notifications.md`.
 - Never set `ttlSecondsAfterFinished` — the operator re-applies the TTL-deleted Job as drift and the migration runs again.
 - Set `spec.wait: true` on a stepped ResourceSet, otherwise the final step is not health-checked.
 
+**Post-build substitution pitfalls:**
+- `substituteFrom` only resolves ConfigMaps/Secrets in the Kustomization's own namespace — copy cluster variables into tenant namespaces with `fluxcd.controlplane.io/copyFrom` (ResourceSet) rather than referencing `flux-system` from elsewhere.
+- Kustomize `spec.images[].name` must match a plain image reference in the manifests (`image: frontend`); image rewriting runs at build time, before `${var}` substitution.
+- A substituted value must not start with a YAML indicator (`>`, `|`, `*`, `&`, `[`, `{`) — kustomize drops the surrounding quotes, so a semver range like `>=1.0.0` yields invalid YAML. Use `x`, `1.x`, `~1.2.0`, `^1.2.0` or `x || >=0.0.0-0`.
+
 **Drift control — pick the right knob:**
 - Kustomization `spec.ignore` — exclude specific JSON-pointer fields from drift detection/apply (e.g. HPA `replicas`). Distinct from the `kustomize.toolkit.fluxcd.io/ssa: Ignore` annotation, which skips a whole object.
 - HelmRelease `spec.driftDetection.ignore` — the HelmRelease equivalent, only active when `driftDetection.mode` is `warn`/`enabled`.
@@ -466,5 +471,5 @@ Grep the field index for field-level lookups when generating YAML.
 | Flux CLI and plugins: `flux schema` discover/validate/extract, local rendering with `flux build` and `flux operator build`, overlay debugging | `references/flux-cli.md` |
 | Gitless GitOps, Flux OCI artifacts, `flux push artifact`, registry-based delivery | `references/gitless-gitops.md` |
 | Gitless image automation (ResourceSet + OCIArtifactTag) | `references/gitless-image-automation.md` |
-| Monorepo directory-driven delivery: one pipeline per app/env directory (ArtifactGenerator `pathPattern` + ExternalArtifact input provider + ResourceSet) | `references/monorepo-delivery.md` |
+| Monorepo directory-driven delivery: one pipeline per app/env directory (ArtifactGenerator `pathPattern` + ExternalArtifact input provider + ResourceSet), production fleet layout with layered infra reconcilers, app environments and per-env image policies | `references/monorepo-delivery.md` |
 | Running Jobs in sequence with deployments (migrations, smoke tests), ResourceSet `steps`, `force`/`recreateOnFailure`/`checksumFrom` annotations | `references/resourcesets.md` |
