@@ -95,6 +95,37 @@ Model: `claude-sonnet-5`
 | Mean duration | 133s | 188s |
 | Mean tokens | 74.5k | 64.8k |
 
+---
+
+Model: `claude-haiku-4-5`
+
+**Results**
+
+| Eval | With Skill | Baseline | Delta |
+|------|-----------|----------|-------|
+| OCI Helm chart | 10/11 (91%) | 3/11 (27%) | +64% |
+| ResourceSet preview envs | 15/15 (100%) | 4/15 (27%) | +73% |
+| Notifications | 16/16 (100%) | 15/16 (94%) | +6% |
+| Image automation | 9/9 (100%) | 6/9 (67%) | +33% |
+| FluxInstance + ResourceSets | 15/15 (100%) | 3/15 (20%) | +80% |
+| Terraform bootstrap | 12/12 (100%) | 3/12 (25%) | +75% |
+| Gitless publish pipeline | 14/14 (100%) | 7/14 (50%) | +50% |
+| Air-gapped 2.9 fields | 11/11 (100%) | 3/11 (27%) | +73% |
+| Add app in repo | 7/7 (100%) | 7/7 (100%) | 0% |
+| Debug broken overlay | 5/5 (100%) | 1/5 (20%) | +80% |
+| ResourceSet local render | 6/6 (100%) | 2/6 (33%) | +67% |
+| Monorepo delivery | 9/9 (100%) | 1/9 (11%) | +89% |
+| Staged Jobs | 9/9 (100%) | 1/9 (11%) | +89% |
+| Fleet scaffold | 9/10 (90%) | 1/10 (10%) | +80% |
+| **Overall** | **147/149 (99%)** | **57/149 (38%)** | **+61%** |
+
+**Costs**
+
+| Metric | With Skill | Baseline |
+|--------|-----------|----------|
+| Mean duration | 109s | 84s |
+| Mean tokens | 53.7k | 31.8k |
+
 ## v0.2.0 (2026-07-03)
 
 The bundled OpenAPI JSON schemas are replaced with greppable field indexes (`assets/schemas/*.fields.txt`, one line per field), shrinking the schema payload by ~45%. Agents grep a dotted field path instead of reading the full JSON. Three-way comparison against the v0.1.0 snapshot (JSON schemas) and the no-skill baseline; 3 runs per eval per configuration, assertion counts pooled across runs. Graded by `claude-opus-4-8`.
