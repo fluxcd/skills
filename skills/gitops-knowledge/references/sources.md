@@ -380,13 +380,35 @@ spec:
 ```
 
 This keeps the ArtifactGenerator stable as teams add or remove components — no edit needed
-when a new `apps/<name>/kustomize` directory appears.
+when a new `apps/<name>/kustomize` directory appears. The captured values are also set as
+**labels** on each generated ExternalArtifact (`app: frontend`), and `spec.commonMetadata`
+adds fixed labels/annotations to all of them.
+
+When overlays reference a base with a relative path (`resources: [../../base]`), copy the base
+**and** the overlay into the artifact preserving the layout, or the Kustomization build fails
+on the missing base:
+
+```yaml
+  pathPattern: "@mono/apps/{app}/envs/{env}"
+  artifacts:
+    - name: "{app}-{env}"
+      copy:
+        - from: "@mono/apps/{app}/base/**"
+          to: "@artifact/base/"
+        - from: "@mono/apps/{app}/envs/{env}/**"
+          to: "@artifact/envs/{env}/"       # Kustomization path: ./envs/<env>
+```
+
+To generate the per-artifact Kustomizations automatically instead of writing one per app,
+pair the generator with a `ResourceSetInputProvider` of `type: ExternalArtifact` and a
+`ResourceSet` — load `references/monorepo-delivery.md`.
 
 **Key spec fields:**
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `pathPattern` | string | `@<alias>/<pattern>` directory-discovery pattern with named captures (e.g. `{app}`) for monorepos |
+| `pathPattern` | string | `@<alias>/<pattern>` directory-discovery pattern with named captures (e.g. `{app}`) for monorepos; captures become labels on the generated ExternalArtifacts |
+| `commonMetadata.labels` / `.annotations` | map | Applied to every generated ExternalArtifact (useful as provider selector keys) |
 | `sources[].alias` | string | Unique alias for referencing in copy operations |
 | `sources[].kind` | string | `GitRepository`, `OCIRepository`, `Bucket`, `HelmChart`, or `ExternalArtifact` |
 | `sources[].name` | string | Source name |

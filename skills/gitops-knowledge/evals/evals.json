@@ -213,6 +213,40 @@
         "The rendered build output passes 'flux schema validate' with zero invalid documents",
         "The final report states the ResourceSet was rendered locally (flux-operator build) and schema-validated as verification"
       ]
+    },
+    {
+      "id": 12,
+      "prompt": "Our platform monorepo at https://github.com/acme-corp/platform-monorepo has an apps/ directory where each app has a base/ and envs/dev, envs/prod overlays (the overlays reference ../../base). We run one cluster per environment with Flux Operator. I'm tired of hand-writing a Flux Kustomization for every app — set it up so that any new apps/<app>/envs/<env> directory automatically gets deployed on the matching cluster, and deleting the directory removes the app. Everything should live in the 'apps' namespace. Generate the manifests for the dev cluster and explain how the same manifests work on prod.",
+      "expected_output": "A GitRepository, an ArtifactGenerator with pathPattern '@<alias>/apps/{app}/envs/{env}' that copies BOTH base/ and envs/{env}/ into the artifact, a ResourceSetInputProvider of type ExternalArtifact with label selectors (env: dev, no url), and a ResourceSet templating a Flux Kustomization per input with sourceRef.kind ExternalArtifact, name << inputs.name >>, path ./envs/<< inputs.env >> and prune: true. Mentions source-watcher on the FluxInstance and that prod differs only by the provider's env selector (variable substitution).",
+      "files": [],
+      "expectations": [
+        "An ArtifactGenerator (source.extensions.fluxcd.io/v1beta1) uses spec.pathPattern with {app} and {env} captures over the apps/ directory",
+        "The ArtifactGenerator copy operations include BOTH the app base directory and the env overlay directory so the overlay's ../../base reference resolves inside the artifact",
+        "A ResourceSetInputProvider (fluxcd.controlplane.io/v1) has spec.type 'ExternalArtifact' and uses spec.selectors with a label selector that includes env: dev",
+        "The ExternalArtifact provider does NOT set spec.url",
+        "The ResourceSet templates a Flux Kustomization whose sourceRef.kind is 'ExternalArtifact' and whose sourceRef.name is templated from the exported input name (<< inputs.name >>)",
+        "The generated Kustomization path is templated from the env input (e.g. ./envs/<< inputs.env >>) and prune is true so removed directories tear down the app",
+        "All templating uses << >> delimiters (no {{ }})",
+        "The response states that the source-watcher component must be enabled on the FluxInstance (Flux 2.9+)",
+        "The response explains that prod reuses the same manifests with only the provider's env selector value changed (e.g. via variable substitution)"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "We deploy podinfo from our GitRepository 'apps' (path deploy/podinfo) in the apps namespace with Flux Operator. Before each new version rolls out we need to run a database migration Job (image ghcr.io/acme-corp/podinfo-migrate at the same tag as the app), and after the rollout completes a smoke-test Job must run. New versions are published to ghcr.io/acme-corp/podinfo with semver tags; we don't want to commit tag bumps to Git. Right now we have three Kustomizations chained with dependsOn and it's clunky. Give me a cleaner setup.",
+      "expected_output": "A ResourceSetInputProvider of type OCIArtifactTag (semver filter, limit 1) and a single ResourceSet using spec.steps (pre-deploy Job -> deploy Kustomization -> post-deploy Job) with spec.wait true, per-step timeouts, Jobs annotated with fluxcd.controlplane.io/force: enabled (and optionally recreateOnFailure), the tag injected into the Kustomization via spec.images newTag, and no ttlSecondsAfterFinished. Explains the mapping from the dependsOn chain.",
+      "files": [],
+      "expectations": [
+        "A ResourceSetInputProvider with spec.type 'OCIArtifactTag' scans ghcr.io/acme-corp/podinfo with a semver filter and filter.limit 1",
+        "A single ResourceSet uses spec.steps (not spec.resources) with an ordered migration Job step, then the Kustomization step, then the smoke-test Job step",
+        "The ResourceSet sets spec.wait to true so the final step is health-checked",
+        "Each Job carries the fluxcd.controlplane.io/force: enabled annotation so it is recreated when the image tag changes",
+        "The Jobs use restartPolicy Never and the migration Job image ghcr.io/acme-corp/podinfo-migrate is tagged from the provider input (<< inputs.tag >>)",
+        "The Kustomization step injects the tag into the spec via spec.images newTag (so a version bump changes the Kustomization generation), sourced from GitRepository 'apps' at path deploy/podinfo with wait true",
+        "No Job sets ttlSecondsAfterFinished",
+        "The response does NOT use dependsOn-chained Kustomizations as the solution",
+        "All templating uses << >> delimiters (no {{ }})"
+      ]
     }
   ]
 }

@@ -6,7 +6,8 @@ description: >
   Flux concepts, want manifests for HelmRelease, Kustomization, GitRepository, OCIRepository,
   ResourceSet, FluxInstance, or any Flux resource. When user needs guidance on GitOps repository
   structure, bootstrap Flux with Terraform, multi-tenancy, OCI-based delivery, image tag automation,
-  drift detection, preview environments, notifications, or the Flux Web UI and MCP Server.
+  drift detection, preview environments, monorepo app delivery, running migration Jobs before
+  or after a deployment, notifications, or the Flux Web UI and MCP Server.
 license: Apache-2.0
 ---
 
@@ -54,13 +55,13 @@ Notifications (Provider + Alert → Slack, Teams, GitHub, ...)
 **ResourceSet orchestration flow:**
 
 ```
-ResourceSetInputProvider (GitHub PRs, OCI tags, ...)
+ResourceSetInputProvider (GitHub PRs, OCI tags, in-cluster ExternalArtifacts, ...)
   │
   ▼ exports inputs
-ResourceSet (template + input matrix)
+ResourceSet (template + input matrix; optional ordered `steps`)
   │
   ▼ generates per-input
-Namespaces, Sources, Kustomizations, HelmReleases, RBAC, ...
+Namespaces, Sources, Kustomizations, HelmReleases, RBAC, Jobs, ...
 ```
 
 **Two delivery models:**
@@ -158,6 +159,7 @@ references it via `postBuild.substituteFrom` or `valuesFrom` will reconcile imme
 - **Helm chart from HTTPS Helm repo** → `HelmRepository` (default type)
 - **S3/GCS/MinIO bucket** → `Bucket`
 - **Monorepo that needs splitting** → `ArtifactGenerator` (creates `ExternalArtifact` per path)
+- **Monorepo where every `apps/<app>/envs/<env>` directory should get its own pipeline automatically** → `ArtifactGenerator` with `pathPattern` + `ResourceSetInputProvider` (`type: ExternalArtifact`) + `ResourceSet` templating a `Kustomization` per artifact — load `references/monorepo-delivery.md`
 - **Helm chart + env-specific values from Git** → `ArtifactGenerator` (composes chart with values overlay)
 
 ### Kustomization vs HelmRelease?
@@ -170,6 +172,7 @@ references it via `postBuild.substituteFrom` or `valuesFrom` will reconcile imme
 
 - **One set of manifests, one deployment** → `Kustomization`
 - **Same template deployed for N inputs (tenants, components, environments)** → `ResourceSet`
+- **Jobs that must run before/after a deployment (DB migration, smoke test, cache warmup)** → `ResourceSet` with `spec.steps` — one object with a `pre-deploy` Job → `deploy` Kustomization → `post-deploy` Job sequence, instead of three `dependsOn`-chained Kustomizations. See `references/resourcesets.md` (Step-Based Reconciliation).
 - ResourceSets generate resources from an input matrix; Kustomizations apply a fixed set of manifests.
 
 ### How to Set Up GitOps from Scratch
@@ -417,6 +420,11 @@ load `references/notifications.md`.
     operation: copy
   ```
 
+**Jobs managed by a ResourceSet:**
+- Job specs are immutable — annotate the Job with `fluxcd.controlplane.io/force: enabled` so a changed spec (new image tag) recreates it instead of failing the apply; add `fluxcd.controlplane.io/recreateOnFailure: enabled` only for idempotent Jobs.
+- Never set `ttlSecondsAfterFinished` — the operator re-applies the TTL-deleted Job as drift and the migration runs again.
+- Set `spec.wait: true` on a stepped ResourceSet, otherwise the final step is not health-checked.
+
 **Drift control — pick the right knob:**
 - Kustomization `spec.ignore` — exclude specific JSON-pointer fields from drift detection/apply (e.g. HPA `replicas`). Distinct from the `kustomize.toolkit.fluxcd.io/ssa: Ignore` annotation, which skips a whole object.
 - HelmRelease `spec.driftDetection.ignore` — the HelmRelease equivalent, only active when `driftDetection.mode` is `warn`/`enabled`.
@@ -458,3 +466,5 @@ Grep the field index for field-level lookups when generating YAML.
 | Flux CLI and plugins: `flux schema` discover/validate/extract, local rendering with `flux build` and `flux operator build`, overlay debugging | `references/flux-cli.md` |
 | Gitless GitOps, Flux OCI artifacts, `flux push artifact`, registry-based delivery | `references/gitless-gitops.md` |
 | Gitless image automation (ResourceSet + OCIArtifactTag) | `references/gitless-image-automation.md` |
+| Monorepo directory-driven delivery: one pipeline per app/env directory (ArtifactGenerator `pathPattern` + ExternalArtifact input provider + ResourceSet) | `references/monorepo-delivery.md` |
+| Running Jobs in sequence with deployments (migrations, smoke tests), ResourceSet `steps`, `force`/`recreateOnFailure`/`checksumFrom` annotations | `references/resourcesets.md` |

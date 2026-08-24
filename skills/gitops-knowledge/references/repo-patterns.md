@@ -113,6 +113,12 @@ spec:
 Each ExternalArtifact can be referenced by a separate Kustomization, enabling
 independent reconciliation and failure isolation.
 
+When the monorepo holds many apps with per-environment overlays (`apps/<app>/envs/<env>`),
+skip the hand-written artifact list and Kustomizations entirely: `pathPattern` discovers the
+directories, a `ResourceSetInputProvider` of `type: ExternalArtifact` exports one input per
+generated artifact, and a `ResourceSet` templates the Kustomizations — see
+`references/monorepo-delivery.md`.
+
 ## Multi-Repo Git-Based Pattern
 
 Separate repositories for fleet management, infrastructure, and applications.
