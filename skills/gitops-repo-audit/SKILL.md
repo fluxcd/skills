@@ -97,7 +97,7 @@ Focus on the categories most relevant to what you found in discovery:
 - Has image automation? Check ImagePolicy semver ranges, update paths
 - Has ResourceSets? Check `dependsOn` namespaces, `wait: true` (mandatory with `spec.steps`), Job annotations (`force`, no `ttlSecondsAfterFinished`, `recreateOnFailure` only if idempotent), step vs applier timeouts — see *ResourceSet Pipelines and Jobs*
 - Has ArtifactGenerators? Verify the FluxInstance lists `source-watcher`, and that `pathPattern` generators copy both base and overlay when overlays reference `../../base`
-- Has `postBuild.substitute` or variable ConfigMaps? Check substituted values don't start with a YAML indicator (`>=1.0.0`), `spec.images[].name` has no `${var}`, and `substituteFrom` targets exist in the same namespace — see *Post-Build Substitution*
+- Has `postBuild.substitute` or variable ConfigMaps? Check substituted values don't start with a YAML indicator (`>=1.0.0`), `spec.images[].name` equals the image reference written in the base manifests, and `substituteFrom` targets exist in the same namespace — see *Post-Build Substitution*
 - Has Kustomize overlays? Grep `$bundle` (if written) to see resources in rendered form — an overlay `patch`/`images` can change the effective manifest; cite line numbers from the raw file
 
 Also check for **consistency** across similar resources. For example, if some
@@ -126,7 +126,7 @@ Focus on the categories most relevant to what you found in discovery:
 - Has OCI sources? Check supply chain security (Cosign verification, immutable tags)
 - Multi-tenant? Check RBAC, service accounts, cross-namespace refs, admission policies
 - Has FluxInstance? Check operator security settings (multitenant, network policies)
-- Has cross-namespace `sourceRef` in ResourceSet templates? Read `cluster.multitenant` first — with `multitenant: false` in a platform-team monorepo this is by design (Info), not a Critical finding
+- Has cross-namespace `sourceRef`? Always report it. Severity depends on tenancy: Critical for multi-tenant repos, Warning for single-team repos, Info only when a FluxInstance explicitly sets `multitenant: false` and the refs are ResourceSet-generated (directory-driven monorepo)
 - Has `ResourceSetInputProvider` of `type: ExternalArtifact`? In multi-tenant clusters check `serviceAccountName` and `selectors[].namespace: "*"` scope
 - Has image automation? Check push credential separation and branch isolation
 - Has Kustomize overlays? Grep `$bundle` (if written) for post-render security fields — e.g. a `securityContext` weakened or image retagged by an overlay patch, which the base files won't show

@@ -142,7 +142,7 @@
         "Flags ttlSecondsAfterFinished on the frontend-db-migrate Job as causing the migration to be re-applied and re-run after the TTL deletes it",
         "Flags fluxcd.controlplane.io/recreateOnFailure: enabled on the frontend-db-migrate Job as unsafe for a non-idempotent database migration",
         "Flags the deploy step for having no explicit timeout (falling back to the 10m reconcileTimeout) while the wrapped Kustomization sets timeout: 15m, so the step can time out before the Kustomization reports",
-        "Flags the frontend Kustomization spec.images[].name containing ${app_registry} as never matching the base manifest image (frontend), because kustomize image rewriting runs before post-build substitution",
+        "Flags the frontend Kustomization spec.images[].name (${app_registry}/frontend, i.e. registry.internal.example.com/apps/frontend after substitution) as never matching the base manifest's image: frontend, so the image override is a silent no-op and the workload runs the unpinned base image",
         "Notes that the frontend Kustomization spec.images pins only newTag from the OCIArtifactTag provider and recommends also pinning digest",
         "Does not flag the plain apps-test Namespace manifest in apps/reconcilers/env.yaml as a namespace-lifecycle violation",
         "Does not report the cross-namespace sourceRef.namespace: flux-system in the frontend ResourceSet template as a Critical or High security finding, given the FluxInstance sets multitenant: false",
