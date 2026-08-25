@@ -213,6 +213,58 @@
         "The rendered build output passes 'flux schema validate' with zero invalid documents",
         "The final report states the ResourceSet was rendered locally (flux-operator build) and schema-validated as verification"
       ]
+    },
+    {
+      "id": 12,
+      "prompt": "Our platform monorepo at https://github.com/acme-corp/platform-monorepo has an apps/ directory where each app has a base/ and envs/dev, envs/prod overlays (the overlays reference ../../base). We run one cluster per environment with Flux Operator. I'm tired of hand-writing a Flux Kustomization for every app — set it up so that any new apps/<app>/envs/<env> directory automatically gets deployed on the matching cluster, and deleting the directory removes the app. Everything should live in the 'apps' namespace. Generate the manifests for the dev cluster and explain how the same manifests work on prod.",
+      "expected_output": "A GitRepository, an ArtifactGenerator with pathPattern '@<alias>/apps/{app}/envs/{env}' that copies BOTH base/ and envs/{env}/ into the artifact, a ResourceSetInputProvider of type ExternalArtifact with label selectors (env: dev, no url), and a ResourceSet templating a Flux Kustomization per input with sourceRef.kind ExternalArtifact, name << inputs.name >>, path ./envs/<< inputs.env >> and prune: true. Mentions source-watcher on the FluxInstance and that prod differs only by the provider's env selector (variable substitution).",
+      "files": [],
+      "expectations": [
+        "An ArtifactGenerator (source.extensions.fluxcd.io/v1beta1) uses spec.pathPattern with {app} and {env} captures over the apps/ directory",
+        "The ArtifactGenerator copy operations include BOTH the app base directory and the env overlay directory so the overlay's ../../base reference resolves inside the artifact",
+        "A ResourceSetInputProvider (fluxcd.controlplane.io/v1) has spec.type 'ExternalArtifact' and uses spec.selectors with a label selector that includes env: dev",
+        "The ExternalArtifact provider does NOT set spec.url",
+        "The ResourceSet templates a Flux Kustomization whose sourceRef.kind is 'ExternalArtifact' and whose sourceRef.name is templated from the exported input name (<< inputs.name >>)",
+        "The generated Kustomization path is templated from the env input (e.g. ./envs/<< inputs.env >>) and prune is true so removed directories tear down the app",
+        "All templating uses << >> delimiters (no {{ }})",
+        "The response states that the source-watcher component must be enabled on the FluxInstance (Flux 2.9+)",
+        "The response explains that prod reuses the same manifests with only the provider's env selector value changed (e.g. via variable substitution)"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "We deploy podinfo from our GitRepository 'apps' (path deploy/podinfo) in the apps namespace with Flux Operator. Before each new version rolls out we need to run a database migration Job (image ghcr.io/acme-corp/podinfo-migrate at the same tag as the app), and after the rollout completes a smoke-test Job must run. New versions are published to ghcr.io/acme-corp/podinfo with semver tags; we don't want to commit tag bumps to Git. Right now we have three Kustomizations chained with dependsOn and it's clunky. Give me a cleaner setup.",
+      "expected_output": "A ResourceSetInputProvider of type OCIArtifactTag (semver filter, limit 1) and a single ResourceSet using spec.steps (pre-deploy Job -> deploy Kustomization -> post-deploy Job) with spec.wait true, per-step timeouts, Jobs annotated with fluxcd.controlplane.io/force: enabled (and optionally recreateOnFailure), the tag injected into the Kustomization via spec.images newTag, and no ttlSecondsAfterFinished. Explains the mapping from the dependsOn chain.",
+      "files": [],
+      "expectations": [
+        "A ResourceSetInputProvider with spec.type 'OCIArtifactTag' scans ghcr.io/acme-corp/podinfo with a semver filter and filter.limit 1",
+        "A single ResourceSet uses spec.steps (not spec.resources) with an ordered migration Job step, then the Kustomization step, then the smoke-test Job step",
+        "The ResourceSet sets spec.wait to true so the final step is health-checked",
+        "Each Job carries the fluxcd.controlplane.io/force: enabled annotation so it is recreated when the image tag changes",
+        "The Jobs use restartPolicy Never and the migration Job image ghcr.io/acme-corp/podinfo-migrate is tagged from the provider input (<< inputs.tag >>)",
+        "The Kustomization step injects the tag into the spec via spec.images newTag (so a version bump changes the Kustomization generation), sourced from GitRepository 'apps' at path deploy/podinfo with wait true",
+        "No Job sets ttlSecondsAfterFinished",
+        "The response does NOT use dependsOn-chained Kustomizations as the solution",
+        "All templating uses << >> delimiters (no {{ }})"
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "Scaffold a new gitless GitOps monorepo for our platform in a scratch directory. Two clusters, dev and prod, each syncing its own OCI artifact from oci://ghcr.io/acme-corp/flux-cluster (tag = cluster name). Infra: cert-manager and metrics-server as Helm charts from oci://ghcr.io/acme-corp/charts/<name>. Apps: frontend and backend as plain manifests (Deployment + Service), images published to ghcr.io/acme-corp/<app> with semver tags. App environments: test and staging run on the dev cluster, prod on the prod cluster. Requirements: adding a new component or app directory must deploy it automatically with no hand-written Flux Kustomization per component; app image versions must roll out from the registry without Git commits, with release candidates allowed in test only; nothing cluster-specific outside the per-cluster directory. Validate everything before handing it back.",
+      "expected_output": "A kubernetes/ tree following the directory-driven gitless layout: clusters/{dev,prod}/ (FluxInstance with OCI sync + source-watcher, flux-vars ConfigMap, reconciler Kustomizations), infra/reconcilers (ArtifactGenerator pathPattern + ExternalArtifact RSIP selecting env via ${env} + ResourceSet templating a Kustomization per artifact), infra/components/<name>/controllers/{base,envs/{dev,prod}}, apps/reconcilers (apps ArtifactGenerator, per-app OCIArtifactTag RSIP with ${app_semver} and limit 1 + ResourceSet with sourceRef ExternalArtifact and spec.images tag@digest), apps/<app>/{base,envs/{test,staging,prod}} with bare image names. Test app env semver includes prereleases; staging/prod stable only. All overlays build and schema-validate.",
+      "files": [],
+      "expectations": [
+        "clusters/dev and clusters/prod each contain a FluxInstance with sync.kind OCIRepository, the source-watcher component, and a flux-vars (or equivalent) ConfigMap holding the cluster env",
+        "An ArtifactGenerator with spec.pathPattern over the infra component directories and one over apps/{app}/envs/{env}, each copying BOTH base/ and envs/{env}/ into the artifact",
+        "ResourceSetInputProviders of type ExternalArtifact discover the artifacts by label selectors with the env value coming from a substituted variable (e.g. ${env}) rather than hardcoded per cluster",
+        "ResourceSets template Flux Kustomizations whose sourceRef.kind is ExternalArtifact, with prune true",
+        "Each app has a ResourceSetInputProvider of type OCIArtifactTag scanning ghcr.io/acme-corp/<app> with a semver filter and limit 1, and its generated Kustomization pins the image via spec.images with newTag and digest from the provider inputs",
+        "The test app env semver policy admits prereleases (e.g. 'x || >=0.0.0-0') while staging and prod are stable-only (e.g. 'x'), and no substituted semver value starts with a YAML indicator such as '>'",
+        "App base manifests use the bare app name as the container image (e.g. image: frontend) and set no namespace in the base kustomization",
+        "Every app has envs/test, envs/staging and envs/prod overlays and every infra component has envs/dev and envs/prod overlays, each referencing ../../base",
+        "Every kustomization.yaml directory under the tree builds successfully with kustomize (LoadRestrictionsNone) and the rendered output passes flux schema validate after variable substitution",
+        "The report states that kustomize builds and schema validation were run as verification"
+      ]
     }
   ]
 }

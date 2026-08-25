@@ -3,7 +3,7 @@
 All patterns use Flux Operator with FluxInstance for cluster bootstrap. Each cluster has a
 FluxInstance that syncs from a source and applies manifests via Kustomizations or ResourceSets.
 
-**Contents:** [Monorepo Pattern](#monorepo-pattern) | [Multi-Repo Git-Based Pattern](#multi-repo-git-based-pattern) | [Multi-Repo OCI-Based Pattern (Gitless GitOps)](#multi-repo-oci-based-pattern-gitless-gitops) | [Per-Cluster Configuration](#per-cluster-configuration)
+**Contents:** [Monorepo Pattern](#monorepo-pattern) | [Directory-Driven Monorepo (Gitless)](#directory-driven-monorepo-gitless) | [Multi-Repo Git-Based Pattern](#multi-repo-git-based-pattern) | [Multi-Repo OCI-Based Pattern (Gitless GitOps)](#multi-repo-oci-based-pattern-gitless-gitops) | [Per-Cluster Configuration](#per-cluster-configuration)
 
 ## Monorepo Pattern
 
@@ -112,6 +112,60 @@ spec:
 
 Each ExternalArtifact can be referenced by a separate Kustomization, enabling
 independent reconciliation and failure isolation.
+
+When the monorepo holds many apps with per-environment overlays (`apps/<app>/envs/<env>`),
+skip the hand-written artifact list and Kustomizations entirely: `pathPattern` discovers the
+directories, a `ResourceSetInputProvider` of `type: ExternalArtifact` exports one input per
+generated artifact, and a `ResourceSet` templates the Kustomizations — the next section.
+
+## Directory-Driven Monorepo (Gitless)
+
+The recommended monorepo layout for Flux Operator fleets. The whole
+`kubernetes/` tree is pushed as one OCI artifact per cluster; the cluster never reads Git.
+Flux Operator generates the delivery pipeline from the directory structure: a component or app
+is a directory with a fixed shape, environments are overlays with fixed names, and no Flux
+Kustomization is ever written by hand for them.
+
+```text
+kubernetes/
+├── clusters/<cluster>/                  # the ONLY cluster-specific directory
+│   ├── flux-instance.yaml               #   OCI sync of clusters/<cluster>/, source-watcher enabled
+│   ├── flux-vars.yaml                   #   ConfigMap: env, cluster_registry, app_registry, cluster_name
+│   ├── infra-reconcilers.yaml           #   Kustomization → ./infra/reconcilers
+│   └── apps-<app_env>-reconcilers.yaml  #   one per hosted app env → ./apps/reconcilers
+├── infra/
+│   ├── reconcilers/                     # ArtifactGenerator + RSIP + ResourceSet per layer
+│   │   ├── core.yaml                    #   → Kustomization infra-core
+│   │   ├── controllers.yaml             #   → Kustomization <component>   (depends on core)
+│   │   └── configs.yaml                 #   → Kustomization <component>-configs (depends on <component>)
+│   ├── core/{base,envs/<env>}/          # Namespaces + NetworkPolicies for all components
+│   └── components/<name>/
+│       ├── controllers/{base,envs/<env>}/   # OCIRepository (chart) + HelmRelease
+│       └── configs/{base,envs/<env>}/       # CRs that need the controller's CRDs
+└── apps/
+    ├── reconcilers/                     # generic; applied once per hosted app env
+    │   ├── artifacts.yaml               #   ArtifactGenerator apps/{app}/envs/{env}
+    │   ├── env.yaml                     #   Namespace apps-<app_env> + plumbing ResourceSet
+    │   └── <app>.yaml                   #   image RSIP + ResourceSet per app
+    └── <app>/{base,envs/<app_env>}/     # plain manifests + app.env → ConfigMap
+```
+
+**Two kinds of environment.** The *cluster env* (`dev`, `prod`; one per cluster, from
+`flux-vars`) selects `infra/**/envs/<env>` overlays. The *app env* (`test`, `staging`, `prod`)
+is a namespace `apps-<app_env>` hosting one instance of every app, selecting
+`apps/<app>/envs/<app_env>` overlays; a cluster hosts any number of them (`dev` hosts `test` +
+`staging`, `prod` hosts `prod`), one small reconciler file each, carrying that app env's image
+policy (`app_semver`).
+
+**Delivery.** Infra components and apps are split into per-directory `ExternalArtifact`s
+in-cluster, so a change to one app reconciles only that app's Kustomization. Apps additionally
+get gitless image automation: an `OCIArtifactTag` provider per app and app env scans the
+cluster's registry, and the generated Kustomization pins `tag@digest` via `spec.images`.
+Promotion to prod is copying the image into the prod registry (`flux mirror`).
+
+Full manifests, ordering chain, and the rules that must hold (plain-name images, YAML-safe
+semver ranges, namespace as plain manifest, unique names) are in
+`references/monorepo-delivery.md`.
 
 ## Multi-Repo Git-Based Pattern
 

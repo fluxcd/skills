@@ -111,19 +111,25 @@ Represents a 3rd-party source controller artifact. Managed by ArtifactGenerator,
 
 Field index: assets/schemas/artifactgenerator-source-v1beta1.fields.txt
 
-Composes and decomposes sources into new ExternalArtifacts.
+Composes and decomposes sources into new ExternalArtifacts. Reconciled by the `source-watcher`
+component, which must be listed in the FluxInstance `.spec.components` (it is not installed by default).
 
 **Key fields:**
-- `.spec.sources[]` — Source references with aliases (`alias`, `kind`, `name`)
+- `.spec.sources[]` — Source references with aliases (`alias`, `kind`, `name`); `kind` is `GitRepository`, `OCIRepository`, `Bucket`, `HelmChart`, or `ExternalArtifact`
 - `.spec.artifacts[]` — Output artifact definitions with copy rules
   - `.copy[].from` — Source path using `@alias/path/**` syntax
   - `.copy[].to` — Destination path using `@artifact/path/` syntax
+- `.spec.pathPattern` — `@<alias>/<pattern>` directory-discovery pattern with named captures (e.g. `@monorepo/apps/{app}/envs/{env}`); one ExternalArtifact is generated per matching directory and the captures template `artifacts[].name` and `copy` paths. The captured values are set as **labels** on each generated ExternalArtifact
+- `.spec.commonMetadata.labels` / `.annotations` — Applied to every generated ExternalArtifact (used as `ResourceSetInputProvider` selector keys)
 
 **Patterns:**
 - Monorepo decomposition — split one GitRepository into multiple ExternalArtifacts for independent reconciliation. E.g., separate `infrastructure/**` and `apps/**` into independent artifacts so infra changes don't trigger app reconciliation.
+- Directory-driven delivery — `pathPattern` + a `ResourceSetInputProvider` of `type: ExternalArtifact` + a `ResourceSet` templating one Kustomization per artifact, so adding a directory deploys it and removing it prunes the deployment (see [repo-patterns.md](repo-patterns.md)).
 
 **Gotchas:**
 - Uses `@alias` and `@artifact` path prefixes. The `@monorepo` alias references the first source.
+- With `pathPattern`, a Kustomize overlay that references its base with a relative path (`resources: [../../base]`) needs **both** `base/**` and `envs/{env}/**` copied into the artifact preserving the layout. Copying only the overlay directory makes the generated Kustomization fail on the missing base — and a local `kustomize build` of the repo still succeeds, so `validate.sh` does not catch it.
+- Directories that don't match `pathPattern` are silently ignored: a component or app without an `envs/<env>` overlay is simply not deployed on that cluster.
 
 ## Appliers API
 

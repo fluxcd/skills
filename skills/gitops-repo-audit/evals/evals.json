@@ -124,6 +124,30 @@
         "Flags readOnlyRootFilesystem disabled on payments in production (overlay patch)",
         "Does not certify the repository as secure/PASS on the basis of the hardened raw base files — inspects the rendered overlays for effective state"
       ]
+    },
+    {
+      "id": 7,
+      "prompt": "Analyze the tests/gitops-repo-audit/resourceset-pipelines/ directory as a GitOps repository and provide a complete analysis report.",
+      "expected_output": "A report classifying the repo as a directory-driven (Flux Operator, Gitless) monorepo where ArtifactGenerator pathPattern + ExternalArtifact input providers + ResourceSets generate the Kustomizations, and finding the seeded defects: FluxInstance missing the source-watcher component, the infra-controllers ArtifactGenerator copying only the overlay (no base), the infra-controllers ResourceSet dependsOn missing namespace, app_semver '>=1.0.0' substitution producing invalid YAML, the frontend stepped ResourceSet missing wait: true, the db-migrate Job missing the force annotation, carrying ttlSecondsAfterFinished and recreateOnFailure, the deploy step timeout shorter than the wrapped Kustomization timeout, and a ${var} in Kustomization spec.images[].name. It must not flag the ExternalArtifact provider type as invalid, must not flag the plain apps-test Namespace manifest, and must not treat the cross-namespace sourceRef as Critical given multitenant: false.",
+      "files": [],
+      "expectations": [
+        "Classifies the repository as a directory-driven (Flux Operator / Gitless) monorepo where ArtifactGenerator pathPattern, ExternalArtifact input providers and ResourceSets generate the Kustomizations, and does not treat the absence of hand-written per-app Kustomizations as a gap",
+        "Treats the ResourceSetInputProvider type ExternalArtifact (with selectors and no url) as a valid provider type and does not flag it as unknown or invalid",
+        "Flags the FluxInstance for missing the source-watcher component while ArtifactGenerator resources exist, so no ExternalArtifacts would be generated",
+        "Flags the infra-controllers ArtifactGenerator for copying only controllers/envs/{env} without controllers/base, so the generated artifact's ../../base reference fails to build in-cluster",
+        "Flags the infra-controllers ResourceSet dependsOn entry for infra-core as missing namespace",
+        "Flags app_semver: \">=1.0.0\" in the apps-test-reconcilers Kustomization postBuild.substitute as a value starting with a YAML indicator that yields invalid YAML after substitution, and recommends a safe range such as 1.x, x, ^1.0.0 or ~1.0.0",
+        "Flags the frontend ResourceSet (spec.steps) for missing spec.wait: true, so the final post-deploy step is not health-checked",
+        "Flags the frontend-db-migrate Job for lacking the fluxcd.controlplane.io/force: enabled annotation, so the apply fails when the image tag changes because Job specs are immutable",
+        "Flags ttlSecondsAfterFinished on the frontend-db-migrate Job as causing the migration to be re-applied and re-run after the TTL deletes it",
+        "Flags fluxcd.controlplane.io/recreateOnFailure: enabled on the frontend-db-migrate Job as unsafe for a non-idempotent database migration",
+        "Flags the deploy step for having no explicit timeout (falling back to the 10m reconcileTimeout) while the wrapped Kustomization sets timeout: 15m, so the step can time out before the Kustomization reports",
+        "Flags the frontend Kustomization spec.images[].name (${app_registry}/frontend, i.e. registry.internal.example.com/apps/frontend after substitution) as never matching the base manifest's image: frontend, so the image override is a silent no-op and the workload runs the unpinned base image",
+        "Notes that the frontend Kustomization spec.images pins only newTag from the OCIArtifactTag provider and recommends also pinning digest",
+        "Does not flag the plain apps-test Namespace manifest in apps/reconcilers/env.yaml as a namespace-lifecycle violation",
+        "Does not report the cross-namespace sourceRef.namespace: flux-system in the frontend ResourceSet template as a Critical or High security finding, given the FluxInstance sets multitenant: false",
+        "Produces a structured report with summary, directory structure, validation results, best practices, security, and prioritized recommendations sections"
+      ]
     }
   ]
 }

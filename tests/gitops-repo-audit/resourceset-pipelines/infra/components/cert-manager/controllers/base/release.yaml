@@ -1,0 +1,24 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+spec:
+  interval: 30m
+  timeout: 5m
+  releaseName: cert-manager
+  chartRef:
+    kind: OCIRepository
+    name: cert-manager
+  install:
+    crds: Create
+    strategy:
+      name: RetryOnFailure
+  upgrade:
+    crds: CreateReplace
+    strategy:
+      name: RetryOnFailure
+  driftDetection:
+    mode: enabled
+  values:
+    crds:
+      enabled: true

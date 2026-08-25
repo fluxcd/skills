@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flux-vars
+  namespace: flux-system
+  labels:
+    reconcile.fluxcd.io/watch: Enabled
+data:
+  env: dev
+  cluster_name: dev-eu-west-1
+  cluster_registry: registry.internal.example.com
+  app_registry: registry.internal.example.com/apps

@@ -62,6 +62,11 @@ provenance comment.
 
 Use `-e <dir>` to exclude additional directories from validation.
 
+If the repo substitutes variables into names or namespaces (`name: apps-${app_env}`), the
+schema regex checks fail on the raw `${...}` text. Build a dotenv file from the repo's variable
+ConfigMaps and `postBuild.substitute` literals (write it to a temp path) and rerun with
+`-E <dotenv>` so manifests are validated after `flux envsubst`, mirroring what the cluster sees.
+
 ### Phase 3: API Compliance
 
 Check for deprecated Flux API versions.
@@ -85,10 +90,14 @@ against each applicable category. Not every checklist item applies to every repo
 
 Focus on the categories most relevant to what you found in discovery:
 - Monorepo? Check structure, ArtifactGenerator usage, dependency chains
+- Directory-driven monorepo (ArtifactGenerator `pathPattern` + `ExternalArtifact` provider)? Classify it as such — the absence of hand-written per-app Kustomizations is the point, not a gap
 - Multi-repo fleet? Check RBAC, multi-tenancy, service accounts
 - Has HelmReleases? Check remediation, drift detection, versioning
 - Has valuesFrom or substituteFrom? Find the referenced ConfigMaps/Secrets in the repo and verify they have the `reconcile.fluxcd.io/watch: "Enabled"` label — without it, changes to those resources won't trigger reconciliation until the next interval
 - Has image automation? Check ImagePolicy semver ranges, update paths
+- Has ResourceSets? Check `dependsOn` namespaces, `wait: true` (mandatory with `spec.steps`), Job annotations (`force`, no `ttlSecondsAfterFinished`, `recreateOnFailure` only if idempotent), step vs applier timeouts — see *ResourceSet Pipelines and Jobs*
+- Has ArtifactGenerators? Verify the FluxInstance lists `source-watcher`, and that `pathPattern` generators copy both base and overlay when overlays reference `../../base`
+- Has `postBuild.substitute` or variable ConfigMaps? Check substituted values don't start with a YAML indicator (`>=1.0.0`), `spec.images[].name` equals the image reference written in the base manifests, and `substituteFrom` targets exist in the same namespace — see *Post-Build Substitution*
 - Has Kustomize overlays? Grep `$bundle` (if written) to see resources in rendered form — an overlay `patch`/`images` can change the effective manifest; cite line numbers from the raw file
 
 Also check for **consistency** across similar resources. For example, if some
@@ -117,6 +126,8 @@ Focus on the categories most relevant to what you found in discovery:
 - Has OCI sources? Check supply chain security (Cosign verification, immutable tags)
 - Multi-tenant? Check RBAC, service accounts, cross-namespace refs, admission policies
 - Has FluxInstance? Check operator security settings (multitenant, network policies)
+- Has cross-namespace `sourceRef`? Always report it. Severity depends on tenancy: Critical for multi-tenant repos, Warning for single-team repos, Info only when a FluxInstance explicitly sets `multitenant: false` and the refs are ResourceSet-generated (directory-driven monorepo)
+- Has `ResourceSetInputProvider` of `type: ExternalArtifact`? In multi-tenant clusters check `serviceAccountName` and `selectors[].namespace: "*"` scope
 - Has image automation? Check push credential separation and branch isolation
 - Has Kustomize overlays? Grep `$bundle` (if written) for post-render security fields — e.g. a `securityContext` weakened or image retagged by an overlay patch, which the base files won't show
 

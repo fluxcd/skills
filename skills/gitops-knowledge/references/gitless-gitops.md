@@ -371,10 +371,41 @@ not make the artifact available to downstream `Kustomization` or `HelmRelease` r
 | Semver selector          | Production `OCIRepository.ref.semver` selects latest release | Release-driven production      |
 | Digest pin               | `ref.digest` points to exact digest                          | Maximum reproducibility        |
 | ResourceSetInputProvider | Scans registry tags and templates selected tag/digest        | Gitless image/chart automation |
+| Registry-to-registry copy | `flux mirror sync` copies an image by digest from the dev registry to the prod registry; the prod cluster provider scans only its own registry | Per-cluster registries, air-gapped prod |
 
 Do not mutate cluster manifests in Git just to promote OCI artifacts unless a Git audit trail of
 promotions is a hard requirement. If Git mutation is required, use
 `ImageRepository` + `ImagePolicy` + `ImageUpdateAutomation` instead.
+
+Registry-to-registry promotion uses the `flux mirror` plugin (`flux plugin install mirror`).
+The config holds the two registries and takes the app and version from the environment
+(strict mode fails on unset variables, so a typo cannot mirror the wrong thing):
+
+```yaml
+apiVersion: mirror.plugin.fluxcd.io/v1beta1
+kind: Config
+hosts:                                     # optional: cloud auth via ambient identity
+  - host: 111111111111.dkr.ecr.eu-west-1.amazonaws.com
+    provider: ecr                          # also: acr, gar
+  - host: 222222222222.dkr.ecr.eu-west-1.amazonaws.com
+    provider: ecr
+artifacts:
+  - source: 111111111111.dkr.ecr.eu-west-1.amazonaws.com/${APP}
+    destination: 222222222222.dkr.ecr.eu-west-1.amazonaws.com/${APP}
+    selector:
+      semver: "${VERSION}"                 # exact version, or a range with limit: 1
+      limit: 1
+```
+
+```shell
+APP=frontend VERSION=6.14.0 flux mirror sync promote.yaml --dry-run -o yaml   # preview
+APP=frontend VERSION=6.14.0 flux mirror sync promote.yaml
+```
+
+The same config format (`charts:` for HTTPS Helm repo → OCI, `artifacts:` for OCI → OCI) mirrors
+upstream Helm charts and images into a cluster's registry so reconciliation has no external
+dependencies. Because a provider selects the *newest* matching tag, copying an older image does
+not roll back — pin the provider's semver range instead.
 
 ## Observability and Tracing
 

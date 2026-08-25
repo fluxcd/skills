@@ -1,0 +1,21 @@
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: apps
+  namespace: flux-system
+spec:
+  sources:
+    - alias: monorepo
+      kind: OCIRepository
+      name: flux-system
+  commonMetadata:
+    labels:
+      role: apps
+  pathPattern: "@monorepo/apps/{app}/envs/{env}"
+  artifacts:
+    - name: "{app}-{env}"
+      copy:
+        - from: "@monorepo/apps/{app}/base/**"
+          to: "@artifact/base/"
+        - from: "@monorepo/apps/{app}/envs/{env}/**"
+          to: "@artifact/envs/{env}/"

@@ -1,5 +1,131 @@
 # gitops-knowledge
 
+## v0.3.0 (2026-08-24)
+
+The `gitops-knowledge` skill gains the Flux Operator ResourceSet features for monorepo delivery and staged Jobs: the `ExternalArtifact` input provider, step-based reconciliation with Job lifecycle rules, the directory-driven gitless fleet layout (`references/monorepo-delivery.md`), and post-build substitution pitfalls. The suite grows from 121 to 149 assertions with three new evals: `monorepo-delivery`, `staged-jobs`, and `fleet-scaffold` (scaffolds a two-cluster gitless monorepo from scratch and is graded by building every overlay with kustomize and schema-validating the output). One run per eval per configuration; evals 1-8 graded per-assertion by `claude-opus-5`, evals 9-14 graded programmatically. The no-skill baseline had the same tools available (Flux CLI, schema catalog MCP, web) and in several runs compensated by fetching upstream docs, which is reflected in its duration and token costs.
+
+Model: `claude-fable-5`
+
+**Results**
+
+| Eval | With Skill | Baseline | Delta |
+|------|-----------|----------|-------|
+| OCI Helm chart | 11/11 (100%) | 9/11 (82%) | +18% |
+| ResourceSet preview envs | 15/15 (100%) | 15/15 (100%) | 0% |
+| Notifications | 16/16 (100%) | 13/16 (81%) | +19% |
+| Image automation | 9/9 (100%) | 9/9 (100%) | 0% |
+| FluxInstance + ResourceSets | 15/15 (100%) | 14/15 (93%) | +7% |
+| Terraform bootstrap | 12/12 (100%) | 12/12 (100%) | 0% |
+| Gitless publish pipeline | 14/14 (100%) | 14/14 (100%) | 0% |
+| Air-gapped 2.9 fields | 11/11 (100%) | 10/11 (91%) | +9% |
+| Add app in repo | 7/7 (100%) | 7/7 (100%) | 0% |
+| Debug broken overlay | 5/5 (100%) | 5/5 (100%) | 0% |
+| ResourceSet local render | 6/6 (100%) | 6/6 (100%) | 0% |
+| Monorepo delivery | 9/9 (100%) | 9/9 (100%) | 0% |
+| Staged Jobs | 9/9 (100%) | 9/9 (100%) | 0% |
+| Fleet scaffold | 10/10 (100%) | 2/10 (20%) | +80% |
+| **Overall** | **149/149 (100%)** | **134/149 (90%)** | **+10%** |
+
+**Costs**
+
+| Metric | With Skill | Baseline |
+|--------|-----------|----------|
+| Mean duration | 175s | 167s |
+| Mean tokens | 64.2k | 44.5k |
+
+---
+
+Model: `claude-opus-5`
+
+**Results**
+
+| Eval | With Skill | Baseline | Delta |
+|------|-----------|----------|-------|
+| OCI Helm chart | 11/11 (100%) | 9/11 (82%) | +18% |
+| ResourceSet preview envs | 15/15 (100%) | 13/15 (87%) | +13% |
+| Notifications | 16/16 (100%) | 15/16 (94%) | +6% |
+| Image automation | 9/9 (100%) | 9/9 (100%) | 0% |
+| FluxInstance + ResourceSets | 15/15 (100%) | 14/15 (93%) | +7% |
+| Terraform bootstrap | 12/12 (100%) | 6/12 (50%) | +50% |
+| Gitless publish pipeline | 14/14 (100%) | 13/14 (93%) | +7% |
+| Air-gapped 2.9 fields | 11/11 (100%) | 6/11 (55%) | +45% |
+| Add app in repo | 7/7 (100%) | 7/7 (100%) | 0% |
+| Debug broken overlay | 5/5 (100%) | 5/5 (100%) | 0% |
+| ResourceSet local render | 6/6 (100%) | 6/6 (100%) | 0% |
+| Monorepo delivery | 9/9 (100%) | 3/9 (33%) | +67% |
+| Staged Jobs | 9/9 (100%) | 6/9 (67%) | +33% |
+| Fleet scaffold | 10/10 (100%) | 1/10 (10%) | +90% |
+| **Overall** | **149/149 (100%)** | **113/149 (76%)** | **+24%** |
+
+**Costs**
+
+| Metric | With Skill | Baseline |
+|--------|-----------|----------|
+| Mean duration | 219s | 222s |
+| Mean tokens | 71.2k | 54.6k |
+
+---
+
+Model: `claude-sonnet-5`
+
+**Results**
+
+| Eval | With Skill | Baseline | Delta |
+|------|-----------|----------|-------|
+| OCI Helm chart | 11/11 (100%) | 8/11 (73%) | +27% |
+| ResourceSet preview envs | 15/15 (100%) | 10/15 (67%) | +33% |
+| Notifications | 16/16 (100%) | 15/16 (94%) | +6% |
+| Image automation | 9/9 (100%) | 6/9 (67%) | +33% |
+| FluxInstance + ResourceSets | 15/15 (100%) | 10/15 (67%) | +33% |
+| Terraform bootstrap | 12/12 (100%) | 9/12 (75%) | +25% |
+| Gitless publish pipeline | 14/14 (100%) | 12/14 (86%) | +14% |
+| Air-gapped 2.9 fields | 11/11 (100%) | 10/11 (91%) | +9% |
+| Add app in repo | 7/7 (100%) | 7/7 (100%) | 0% |
+| Debug broken overlay | 5/5 (100%) | 5/5 (100%) | 0% |
+| ResourceSet local render | 6/6 (100%) | 5/6 (83%) | +17% |
+| Monorepo delivery | 9/9 (100%) | 5/9 (56%) | +44% |
+| Staged Jobs | 9/9 (100%) | 8/9 (89%) | +11% |
+| Fleet scaffold | 10/10 (100%) | 2/10 (20%) | +80% |
+| **Overall** | **149/149 (100%)** | **112/149 (75%)** | **+25%** |
+
+**Costs**
+
+| Metric | With Skill | Baseline |
+|--------|-----------|----------|
+| Mean duration | 133s | 188s |
+| Mean tokens | 74.5k | 64.8k |
+
+---
+
+Model: `claude-haiku-4-5`
+
+**Results**
+
+| Eval | With Skill | Baseline | Delta |
+|------|-----------|----------|-------|
+| OCI Helm chart | 10/11 (91%) | 3/11 (27%) | +64% |
+| ResourceSet preview envs | 15/15 (100%) | 4/15 (27%) | +73% |
+| Notifications | 16/16 (100%) | 15/16 (94%) | +6% |
+| Image automation | 9/9 (100%) | 6/9 (67%) | +33% |
+| FluxInstance + ResourceSets | 15/15 (100%) | 3/15 (20%) | +80% |
+| Terraform bootstrap | 12/12 (100%) | 3/12 (25%) | +75% |
+| Gitless publish pipeline | 14/14 (100%) | 7/14 (50%) | +50% |
+| Air-gapped 2.9 fields | 11/11 (100%) | 3/11 (27%) | +73% |
+| Add app in repo | 7/7 (100%) | 7/7 (100%) | 0% |
+| Debug broken overlay | 5/5 (100%) | 1/5 (20%) | +80% |
+| ResourceSet local render | 6/6 (100%) | 2/6 (33%) | +67% |
+| Monorepo delivery | 9/9 (100%) | 1/9 (11%) | +89% |
+| Staged Jobs | 9/9 (100%) | 1/9 (11%) | +89% |
+| Fleet scaffold | 9/10 (90%) | 1/10 (10%) | +80% |
+| **Overall** | **147/149 (99%)** | **57/149 (38%)** | **+61%** |
+
+**Costs**
+
+| Metric | With Skill | Baseline |
+|--------|-----------|----------|
+| Mean duration | 109s | 84s |
+| Mean tokens | 53.7k | 31.8k |
+
 ## v0.2.0 (2026-07-03)
 
 The bundled OpenAPI JSON schemas are replaced with greppable field indexes (`assets/schemas/*.fields.txt`, one line per field), shrinking the schema payload by ~45%. Agents grep a dotted field path instead of reading the full JSON. Three-way comparison against the v0.1.0 snapshot (JSON schemas) and the no-skill baseline; 3 runs per eval per configuration, assertion counts pooled across runs. Graded by `claude-opus-4-8`.

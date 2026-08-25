@@ -10,6 +10,8 @@ not all apply to every repo. Judge based on the repo's complexity and maturity.
 - [ ] **One directory per cluster** under `clusters/` with cluster-specific Flux bootstrap or FluxInstance and reconciliation config
 - [ ] **Separate controllers and configs** under `infrastructure/`: controllers install CRDs and operators, configs create custom resources that depend on those CRDs
 - [ ] **ArtifactGenerator for monorepos**: When using a monorepo, split the source into independent ExternalArtifacts so infra changes don't trigger app reconciliation and vice versa
+- [ ] **`source-watcher` enabled when ArtifactGenerators exist**: `ArtifactGenerator` is reconciled by the `source-watcher` component, which is not installed by default. If the repo contains ArtifactGenerator resources and the FluxInstance `.spec.components` (or the bootstrap components) does not list `source-watcher`, nothing generates the ExternalArtifacts and every Kustomization pointing at them stays stuck — flag as Critical
+- [ ] **Directory-driven pipelines copy base + overlay**: An ArtifactGenerator with `pathPattern` whose overlays use `resources: [../../base]` must copy both `base/**` and `envs/{env}/**` into the artifact preserving the layout. Read every `copy` entry — an artifact holding only the overlay directory fails to build in-cluster even though `kustomize build` of the repo succeeds locally
 - [ ] **No Flux bootstrap manifests in app/infra dirs**: `flux-system/` (gotk-components, gotk-sync or FluxInstance) belongs under `clusters/`, not mixed with app resources
 - [ ] **Runtime info substitution**: Use ConfigMaps with `postBuild.substituteFrom` for cluster-specific variables (environment, domain, branch) rather than hardcoding values
 
@@ -18,6 +20,7 @@ not all apply to every repo. Judge based on the repo's complexity and maturity.
 - [ ] **Explicit dependency chains**: Use `dependsOn` on Kustomizations or ResourceSets to enforce ordering — typically `infra-controllers` → `infra-configs` → `apps`
 - [ ] **CRDs before custom resources**: Infrastructure controllers (that install CRDs) must be ready before configs that create CRs using those CRDs
 - [ ] **`wait: true` on dependencies**: Kustomizations and ResourceSets that other resources depend on should set `wait: true` so dependents only start after all resources are healthy
+- [ ] **`namespace` on ResourceSet `dependsOn`**: Every `spec.dependsOn[]` entry on a ResourceSet should set `namespace` (and `ready: true` or a `readyExpr`) so the dependency resolves unambiguously, especially when the dependent lives in another namespace
 - [ ] **HelmRelease dependencies**: Use `dependsOn` when one Helm release requires another (e.g., ingress-nginx depends on cert-manager for TLS)
 - [ ] **No circular dependencies**: Verify `dependsOn` chains form a DAG (directed acyclic graph)
 - [ ] **No overlapping Kustomization paths**: Kustomizations sharing the same source must not have paths where one is a prefix of the other — the parent path includes the child's resources, causing apply conflicts and unpredictable pruning
@@ -46,8 +49,30 @@ not all apply to every repo. Judge based on the repo's complexity and maturity.
 - [ ] **Per-app namespaces**: Each application and set of microservices deployed in dedicated namespace to limit blast radius
 - [ ] **Tenant labels**: Use `toolkit.fluxcd.io/tenant` labels on namespaces for multi-tenancy grouping
 - [ ] **`targetNamespace` on Kustomizations**: Set when the source manifests don't include namespace metadata for apps
-- [ ] **Namespace created by Kustomization or ResourceSet**: Verify that target namespaces are created as part of the Kustomization or ResourceSet that deploys the component. Flag usage of `targetNamespace` or `createNamespace` in HelmRelease — these bypass proper namespace lifecycle management. The namespace should exist before the HelmRelease runs, created by the parent Kustomization or ResourceSet template.
+- [ ] **Namespace created by Kustomization or ResourceSet**: Verify that target namespaces are created as part of the Kustomization or ResourceSet that deploys the component. Flag usage of `targetNamespace` or `createNamespace` in HelmRelease — these bypass proper namespace lifecycle management. The namespace should exist before the HelmRelease runs, created by the parent Kustomization or ResourceSet template. Exception: the namespace that *hosts* a namespaced ResourceSet or ResourceSetInputProvider must be a plain manifest applied by the parent Kustomization (it has to exist before those objects are applied) — do not flag that as bypassing the ResourceSet
 - [ ] **No workloads in the default namespace**: HelmReleases and Kustomizations should deploy to a dedicated namespace, not the `default` namespace
+
+## ResourceSet Pipelines and Jobs
+
+Applies to repos with `ResourceSet` resources — especially ones using `spec.steps` or generating `Job` objects.
+Verify annotation names against `assets/schemas/resourceset-fluxcd-v1.fields.txt` and [flux-operator-api-summary.md](flux-operator-api-summary.md).
+
+- [ ] **`wait: true` on stepped ResourceSets**: With `spec.steps`, each step is health-checked before the next regardless of `wait`, but the **final** step is only health-checked when `spec.wait: true`. A ResourceSet with steps and no `wait: true` reports Ready before its last stage (post-deploy Job, smoke test) has finished — flag it
+- [ ] **`force` on Jobs**: Job specs are immutable. A Job templated by a ResourceSet whose spec changes between reconciliations (an image tag from an input, a templated command) must carry `fluxcd.controlplane.io/force: enabled` or the apply fails on the first change. Flag Jobs under a ResourceSet without it
+- [ ] **No `ttlSecondsAfterFinished` on ResourceSet-managed Jobs**: When the TTL controller deletes a completed Job, the operator sees a missing resource as drift on the next reconciliation and re-applies it — the migration runs again unexpectedly. Recommend removing the TTL; to keep history per version, template the Job name from the revision instead (`db-migration-<< inputs.tag >>`)
+- [ ] **`recreateOnFailure` only on idempotent Jobs**: `fluxcd.controlplane.io/recreateOnFailure: enabled` deletes a failed Job and re-runs it on every reconciliation until it succeeds. On a schema migration or any non-idempotent Job this repeats partial changes — flag as Warning and ask whether the Job is safe to re-run
+- [ ] **Step timeouts exceed wrapped applier timeouts**: A step containing a Kustomization or HelmRelease must have a `timeout` longer than that object's own `spec.timeout` (otherwise the step gives up before the applier reports). Without a step `timeout`, the ResourceSet `fluxcd.controlplane.io/reconcileTimeout` annotation applies (default 5m) — compare against it
+- [ ] **Version changes reach the applier spec**: For a `deploy` step to actually wait for a rollout, the new version must change the Kustomization/HelmRelease spec (`spec.images[].newTag`, Helm `values`). If only a ConfigMap changes, add `fluxcd.controlplane.io/checksumFrom` on the pod template (workload defined in the ResourceSet) or a checksum annotation patch (workload behind a Kustomization) so the workload rolls
+- [ ] **Digest pinning with registry providers**: Kustomizations or HelmReleases fed by an `OCIArtifactTag`/`*ArtifactTag` provider should pin `digest` as well as `tag` (`spec.images[].digest: << inputs.digest >>` or `tag@digest` in values) so the deployed image is immutable
+- [ ] **`reconcileTimeout` sized for the layer**: A ResourceSet whose generated Kustomizations install a layer of HelmReleases usually needs `fluxcd.controlplane.io/reconcileTimeout` above the 5m default (e.g. `10m`) when `wait: true`
+
+## Post-Build Substitution
+
+Applies to Kustomizations with `postBuild.substitute`/`substituteFrom` and the ConfigMaps/Secrets they read.
+
+- [ ] **Substituted values are YAML-safe**: Kustomize drops the quotes around `"${var}"`, so a value starting with a YAML indicator (`>`, `|`, `*`, `&`, `%`, `@`, `[`, `{`) produces invalid YAML after substitution. Check `postBuild.substitute` literals and the `data` of referenced ConfigMaps — a semver range like `>=1.0.0` is the classic case; recommend `1.x`, `x`, `~1.2.0`, `^1.2.0` or `x || >=0.0.0-0`
+- [ ] **`spec.images[].name` matches the manifest image exactly**: Kustomize matches `images[].name` against the image reference *as written in the manifests* — if the base says `image: frontend`, the name must be `frontend`, not `registry/frontend` or `${app_registry}/frontend`. Compare every `Kustomization.spec.images[].name` (and `kustomization.yaml` `images[].name`) with the rendered base manifests; a mismatch is a silent no-op and the workload runs the unpinned base image. Note that a `${var}` inside the same Kustomization's `images[].name` can never work (image rewriting runs at build time, before that Kustomization's own post-build substitution); a variable resolved by an *outer* Kustomization does expand, but the expanded value still has to equal the manifest image. `newName`/`newTag`/`digest` may use variables freely
+- [ ] **`substituteFrom` targets the same namespace**: `substituteFrom` only resolves ConfigMaps/Secrets in the Kustomization's own namespace. If the referenced object exists only in another namespace (e.g. `flux-system/flux-vars` read from `apps-test`), the Kustomization fails — recommend copying it into the tenant namespace with a ResourceSet-generated ConfigMap carrying `fluxcd.controlplane.io/copyFrom: flux-system/flux-vars` (with the `reconcile.fluxcd.io/watch: Enabled` label)
 
 ## Security & Multi-Tenancy
 

@@ -1,0 +1,69 @@
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: infra-controllers
+  namespace: flux-system
+spec:
+  sources:
+    - alias: monorepo
+      kind: OCIRepository
+      name: flux-system
+  commonMetadata:
+    labels:
+      role: infra-controllers
+  pathPattern: "@monorepo/infra/components/{app}/controllers/envs/{env}"
+  artifacts:
+    - name: "{app}-{env}"
+      copy:
+        - from: "@monorepo/infra/components/{app}/controllers/envs/{env}/**"
+          to: "@artifact/envs/{env}/"
+---
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSetInputProvider
+metadata:
+  name: infra-controllers
+  namespace: flux-system
+spec:
+  type: ExternalArtifact
+  selectors:
+    - matchLabels:
+        role: infra-controllers
+        env: ${env}
+---
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSet
+metadata:
+  name: infra-controllers
+  namespace: flux-system
+  annotations:
+    fluxcd.controlplane.io/reconcileTimeout: "10m"
+spec:
+  wait: true
+  dependsOn:
+    - apiVersion: fluxcd.controlplane.io/v1
+      kind: ResourceSet
+      name: infra-core
+      ready: true
+  inputsFrom:
+    - kind: ResourceSetInputProvider
+      name: infra-controllers
+  resources:
+    - apiVersion: kustomize.toolkit.fluxcd.io/v1
+      kind: Kustomization
+      metadata:
+        name: << inputs.app >>
+        namespace: << inputs.provider.namespace >>
+      spec:
+        interval: 30m
+        retryInterval: 5m
+        timeout: 5m
+        prune: true
+        wait: true
+        sourceRef:
+          kind: ExternalArtifact
+          name: << inputs.name >>
+        path: ./envs/<< inputs.env >>
+        postBuild:
+          substituteFrom:
+            - kind: ConfigMap
+              name: flux-vars
