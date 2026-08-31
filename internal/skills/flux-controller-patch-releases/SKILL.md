@@ -97,9 +97,18 @@ Supported controllers:
   not invent substitutions or skip steps — each step has a reason.
 - **Do not declare a controller "done" until every step in the Release Flow
   below has been executed for it**, including the final changelog
-  cherry-pick PR back to `main` (step 11). Merging the release PR and
-  tagging is *not* the last step. Before reporting completion, walk through
-  each controller against the numbered steps and confirm each one ran.
+  cherry-pick PR back to `main` (step 11) *and that PR being merged*. Merging
+  the release PR and tagging is *not* the last step, and neither is opening
+  the cherry-pick PR. Before reporting completion, walk through each
+  controller against the numbered steps and confirm each one ran.
+- **Never halt while there is work you can do.** The session is over when
+  every controller has been through all eleven steps and no PR opened during
+  it is still waiting to be merged. Do not stop to report progress and wait
+  for a prompt when nothing is blocking you — reporting is not a step, and
+  "the PRs are open" is not a finish line. The only legitimate pauses are
+  external: CI still running, a PR awaiting a maintainer's approval, a release
+  workflow in flight. When one of those clears, act on it immediately instead
+  of asking whether to continue.
 - PRs opened by this procedure use the commit subject as the PR title and an
   empty body.
 
@@ -208,15 +217,42 @@ Rules:
 
 Do not reduce a dependency bump to a generic "Update fluxcd/pkg dependencies"
 line and move on — the user-facing substance is usually hidden inside the bump.
+Weigh Flux's own repos and third-party dependencies differently:
 
-- Read the PR description and follow any referenced upstream PRs (e.g. an
-  `Includes: fluxcd/pkg#NNNN` line), and look at the actual `go.mod` diff to see
-  what really changed.
-- Call out notable items in the intro and bullets: security fixes with their
-  CVE/GHSA and an advisory link, plus a short parenthetical describing the
-  impact. When several controllers pull the same bump (e.g. the same go-git
-  release), use matching wording across their changelogs so readers can
-  correlate them.
+- **The `fluxcd/*` modules are what matter.** These are our own libraries, so a
+  bump is how a fix we made reaches the controller. Trace every module in the
+  `go.mod` diff back to its commits, e.g. in a local clone of `fluxcd/pkg`:
+  `git log --oneline --no-merges <mod>/<old>..<mod>/<new> -- <mod>`, filtering
+  out `Prepare for release` and the shared `Upgrade k8s to ...` commits. Read
+  the PR behind each remaining commit and describe the fix in the controller's
+  own terms. Doing this across all the modules of one release usually leaves a
+  handful of real changes, which is a short enough list to reason about
+  per controller.
+- **Third-party bumps are noise unless they fix something our users hit.** Do
+  not recount an upstream project's release notes, and do not list upstream
+  CVE/GHSA advisories that merely rode along with a bump. Mention an upstream
+  change only when it resolves an issue reported by Flux users, or when the
+  upgrade itself is the point (e.g. syncing the Helm version with the one
+  helm-controller ships) — and then say why it matters to Flux, not what
+  changed upstream.
+- **State the Kubernetes bump when `k8s.io/*` actually moves**, e.g. "which
+  bring Kubernetes to 1.36.4". Read the version off the `go.mod` diff for that
+  specific bump instead of assuming one is there: a `fluxcd/pkg` update may
+  carry a Kubernetes bump, a module fix, both, or neither, and the same release
+  window can move `k8s.io/*` for one controller and not for another.
+- **Check whether the changed code is reachable from the controller**, and be
+  as careful about wrongly leaving it out as about wrongly putting it in. A fix
+  can land in a function the controller never calls, in which case it does not
+  belong in that changelog; or in one the controller already calls, in which
+  case the behavior change ships without any code change in the controller and
+  *must* be in the changelog. `grep` the controller for the changed symbol and
+  for the type that owns it. Example: `runtime/client` rejecting file
+  references in kubeconfigs reached kustomize-controller purely through
+  `Impersonator`, which kustomize-controller uses and the other controllers do
+  not — so it changed how `.spec.kubeConfig` Secrets are accepted with no
+  kustomize-controller commit behind it.
+- When several controllers pull the same bump, use matching wording across
+  their changelogs so readers can correlate them.
 - Only mention a dependency change if it is relevant to what that controller
   actually does. A bumped module often ships capabilities the controller never
   exercises, and listing them implies a capability it does not have. For
@@ -238,6 +274,13 @@ line and move on — the user-facing substance is usually hidden inside the bump
   apply, inspect the file and confirm before proceeding.
 - Tag from the release series branch merge commit, not from the release prep branch.
 - Cherry-pick only the changelog commit back to `main`, not the release version bump.
+- When amending a release PR, confirm the version bump survived. After
+  `git reset --soft HEAD~2`, do not `git checkout` `go.mod` or
+  `config/manager/kustomization.yaml` — that restores them from the index and
+  silently reverts the bump, leaving a release PR that only touches the
+  changelog. Rebuild both commits, then check with
+  `git diff origin/release/vX.Y.x --stat` that `CHANGELOG.md`, `go.mod` and
+  `config/manager/kustomization.yaml` are all still modified.
 
 ## Updating this skill
 
