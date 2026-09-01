@@ -18,7 +18,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install flux
-        uses: controlplaneio-fluxcd/flux-operator/actions/setup@876c0b3e56a0d59b04cf105b7c61151fc32d8cde # v0.57.0
+        uses: controlplaneio-fluxcd/flux-operator/actions/setup@b3b36020aca1f8d2172c76949c0bcb6bbf688dde # v0.58.1
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Login to GitHub Container Registry
