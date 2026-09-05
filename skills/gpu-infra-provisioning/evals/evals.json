@@ -1,0 +1,43 @@
+{
+  "version": "1",
+  "skill": "gpu-infra-provisioning",
+  "evals": [
+    {
+      "id": "list-h100-providers",
+      "prompt": "Show me which providers have H100s available right now.",
+      "expectations": [
+        "Runs terradev providers list --gpu H100",
+        "Shows provider names and prices in a table",
+        "Does not invent prices or availability"
+      ]
+    },
+    {
+      "id": "provision-spot-a100",
+      "prompt": "Add a spot A100 node to my knr-ops repo at ~/knr-ops for under $2/hr.",
+      "expectations": [
+        "Checks provider availability before provisioning",
+        "Uses terradev k8s node add with --spot and --max-price flags",
+        "Passes --repo ~/knr-ops",
+        "Explains the node ready step if IP is not immediately available"
+      ]
+    },
+    {
+      "id": "remove-node",
+      "prompt": "Remove the GPU node gpu-worker-01 from my GitOps repo.",
+      "expectations": [
+        "Uses terradev k8s node rm gpu-worker-01",
+        "Instructs user to push the repo after removal",
+        "Mentions that the underlying instance will be terminated"
+      ]
+    },
+    {
+      "id": "watch-reconciliation",
+      "prompt": "How do I watch Flux pick up the new node I just committed?",
+      "expectations": [
+        "Shows flux get kustomizations -w",
+        "Shows kubectl get machines -n default -w",
+        "Mentions pushing the repo first if not done"
+      ]
+    }
+  ]
+}
