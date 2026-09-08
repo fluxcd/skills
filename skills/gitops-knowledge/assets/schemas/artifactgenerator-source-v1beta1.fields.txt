@@ -1,4 +1,4 @@
-# schema source: Flux v2.9.4 https://github.com/fluxcd/flux2
+# schema source: Flux v2.9.5 https://github.com/fluxcd/flux2
 apiVersion <string> enum=source.extensions.fluxcd.io/v1beta1
 kind <string> enum=ArtifactGenerator
 metadata.name <string> (required)
